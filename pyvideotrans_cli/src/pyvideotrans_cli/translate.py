@@ -1,5 +1,5 @@
 """
-文本翻译模块 - 支持本地 LLM API 和 Transformers 本地翻译
+文本翻译模块 - 支持本地 LLM API、Transformers 和本地免费翻译 (Bing/Google)
 """
 import logging
 import re
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Translator:
-    """翻译器 - 支持 LLM API 和本地 Transformers"""
+    """翻译器 - 支持 LLM API、Transformers 和免费翻译服务"""
     subtitles: List[Dict]
     target_language: str
     api_url: str = "http://localhost:1234/v1"
@@ -21,6 +21,7 @@ class Translator:
     max_token: int = 4096
     temperature: float = 0.2
     use_transformers: bool = False  # Флаг для использования локальной модели transformers
+    use_browser_translate: bool = False  # Флаг для использования бесплатного браузерного перевода (Bing/Google)
     
     def translate(self) -> List[Dict]:
         """
@@ -28,6 +29,9 @@ class Translator:
         Returns:
             List[Dict]: [{"start_time": 0.0, "end_time": 1.5, "text": "翻译后的文本"}]
         """
+        if self.use_browser_translate:
+            return self._translate_with_browser()
+        
         if self.use_transformers:
             return self._translate_with_transformers()
         
@@ -175,6 +179,84 @@ class Translator:
         except Exception as e:
             logger.error(f"Transformers translation failed: {e}")
             raise
+    
+    def _translate_with_browser(self) -> List[Dict]:
+        """Перевод через бесплатные сервисы (Bing/Google) без API ключа"""
+        try:
+            from deep_translator import MicrosoftTranslator, GoogleTranslator
+            import time
+            
+            logger.info("Using browser-based translation (Bing)...")
+            
+            # Маппинг языковых кодов для Bing/Google
+            lang_map = {
+                'ru': 'ru',
+                'en': 'en',
+                'zh': 'zh-CN',
+                'ja': 'ja',
+                'ko': 'ko',
+                'de': 'de',
+                'fr': 'fr',
+                'es': 'es',
+                'it': 'it',
+                'pt': 'pt',
+                'ar': 'ar',
+                'hi': 'hi',
+                'tr': 'tr',
+                'pl': 'pl',
+                'nl': 'nl',
+                'sv': 'sv',
+                'vi': 'vi',
+                'th': 'th',
+                'id': 'id',
+            }
+            
+            target_lang = lang_map.get(self.target_language.lower(), self.target_language)
+            
+            # Используем Microsoft Translator (Bing) - более стабилен для субтитров
+            translator = MicrosoftTranslator(target=target_lang)
+            
+            translated_subtitles = []
+            
+            for i, sub in enumerate(self.subtitles):
+                try:
+                    text = sub["text"]
+                    
+                    # Пустые строки пропускаем
+                    if not text.strip():
+                        translated_subtitles.append(sub.copy())
+                        continue
+                    
+                    # Перевод
+                    translated_text = translator.translate(text)
+                    
+                    translated_subtitles.append({
+                        "start_time": sub["start_time"],
+                        "end_time": sub["end_time"],
+                        "text": translated_text if translated_text else text
+                    })
+                    
+                    # Небольшая задержка чтобы не блокировали
+                    if (i + 1) % 10 == 0:
+                        time.sleep(0.5)
+                    
+                    if (i + 1) % 20 == 0:
+                        logger.info(f"Translated {i + 1}/{len(self.subtitles)} subtitles...")
+                        
+                except Exception as e:
+                    logger.warning(f"Translation failed for subtitle {i}: {e}, keeping original")
+                    translated_subtitles.append(sub.copy())
+            
+            logger.info(f"Browser translation completed: {len(translated_subtitles)} subtitles")
+            return translated_subtitles
+            
+        except Exception as e:
+            logger.error(f"Browser translation failed: {e}")
+            # Фоллбэк на transformers если браузерный перевод не сработал
+            logger.info("Falling back to Transformers translation...")
+            self.use_transformers = True
+            self.use_browser_translate = False
+            return self._translate_with_transformers()
     
     def _build_prompt(self, texts: List[str]) -> str:
         """构建翻译提示词"""
