@@ -63,10 +63,10 @@ def main():
     tts_group.add_argument("--qwen-voice", default="Cherry", help="Qwen TTS 音色")
     tts_group.add_argument("--qwen-local", action="store_true", help="使用本地 Qwen TTS (需额外实现)")
     tts_group.add_argument("--qwen-local-model", default="1.7B", help="本地 Qwen TTS 模型大小")
-    tts_group.add_argument("--xtts", action="store_true", help="使用 Coqui XTTS v2 本地 TTS")
-    tts_group.add_argument("--xtts-model", default="tts_models/multilingual/multi-dataset/xtts_v2", help="Coqui XTTS 模型名称")
+    tts_group.add_argument("--xtts", action="store_true", help="使用 CosyVoice 300M 本地 TTS (клонирование голоса)")
+    tts_group.add_argument("--xtts-model", default="iic/CosyVoice-300M", help="CosyVoice модель (по умолчанию iic/CosyVoice-300M)")
     tts_group.add_argument("--xtts-speaker", help="Путь к примеру голоса для клонирования (WAV файл)")
-    tts_group.add_argument("--xtts-language", default="en", help="Язык синтеза для XTTS (по умолчанию en)")
+    tts_group.add_argument("--xtts-language", default="ru", help="Язык синтеза для CosyVoice (по умолчанию ru)")
     
     # 合并参数
     merge_group = parser.add_argument_group("Merge Options")
@@ -202,7 +202,7 @@ def run_translate(args):
 
 def run_tts(args):
     """仅执行 TTS"""
-    from tts import QwenTTS, QwenTTSLocal, CoquiXTTS
+    from tts import QwenTTS, QwenTTSLocal, CosyVoiceTTS
     
     # 读取目标语言字幕
     target_srt_path = args.output_dir / f"{args.target_lang}.srt"
@@ -214,11 +214,11 @@ def run_tts(args):
     
     # Выбор режима TTS
     if args.xtts:
-        # Coqui XTTS v2
-        tts = CoquiXTTS(
+        # CosyVoice 300M (флаг --xtts сохранён для обратной совместимости)
+        tts = CosyVoiceTTS(
             subtitles=subtitles,
             target_language=args.target_lang,
-            model_name=args.xtts_model,
+            model_name=args.xtts_model if args.xtts_model else "iic/CosyVoice-300M",
             output_dir=str(args.output_dir / "tts"),
             device="cuda" if args.cuda else "cpu",
             speaker_wav=args.xtts_speaker,

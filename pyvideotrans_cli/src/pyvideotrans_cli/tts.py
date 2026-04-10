@@ -355,59 +355,61 @@ class QwenTTSLocal:
 
 
 @dataclass
-class CoquiXTTS:
-    """Coqui XTTS v2 - локальная модель TTS с поддержкой множественных языков"""
+class CosyVoiceTTS:
+    """CosyVoice 300M - локальная модель TTS от Alibaba с поддержкой клонирования голоса"""
     subtitles: List[Dict]
     target_language: str = "en"
-    model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+    model_name: str = "iic/CosyVoice-300M"
     output_dir: str = "./output"
     device: str = "cuda"  # "cuda" или "cpu"
     speaker_wav: Optional[str] = None  # Путь к примеру голоса для клонирования
-    language: str = "en"  # Язык синтеза
+    language: str = "ru"  # Язык синтеза
     source_video: Optional[str] = None  # Исходное видео для извлечения голоса
     
     def __post_init__(self):
         self.output_path = Path(self.output_dir)
         self.output_path.mkdir(parents=True, exist_ok=True)
         self.model = None
+        self.frontend = None
         
-        # Маппинг кодов языков для XTTS
+        # Маппинг кодов языков для CosyVoice
         self.language_map = {
-            "en": "en",
-            "zh": "zh-cn",
-            "fr": "fr",
-            "de": "de",
-            "es": "es",
-            "it": "it",
-            "pt": "pt",
-            "pl": "pl",
-            "tr": "tr",
-            "ru": "ru",
-            "nl": "nl",
-            "cs": "cs",
-            "ar": "ar",
-            "hu": "hu",
-            "ko": "ko",
-            "ja": "ja",
-            "hi": "hi",
+            "en": "English",
+            "zh": "Chinese",
+            "fr": "French",
+            "de": "German",
+            "es": "Spanish",
+            "it": "Italian",
+            "pt": "Portuguese",
+            "pl": "Polish",
+            "tr": "Turkish",
+            "ru": "Russian",
+            "nl": "Dutch",
+            "cs": "Czech",
+            "ar": "Arabic",
+            "hu": "Hungarian",
+            "ko": "Korean",
+            "ja": "Japanese",
+            "hi": "Hindi",
         }
     
     def _extract_speaker_from_video(self, video_path: str) -> str:
-        """Извлечение образца голоса из исходного видео (первые 10 секунд)"""
+        """Извлечение образца голоса из исходного видео (первые 10-15 секунд с речью)"""
         import subprocess
         
         speaker_file = self.output_path / "speaker_sample.wav"
         
         logger.info(f"Извлечение образца голоса из видео: {video_path}")
         
-        # Извлекаем первые 10 секунд аудио для использования в качестве образца голоса
+        # Извлекаем аудио для использования в качестве образца голоса
+        # CosyVoice лучше работает с чистым голосом, поэтому берём 10-15 секунд
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-t", "10",  # Первые 10 секунд
+            "-t", "15",  # Первые 15 секунд
             "-vn",
             "-acodec", "pcm_s16le",
-            "-ar", "22050",  # XTTS предпочитает 22050 Гц
+            "-ar", "16000",  # CosyVoice использует 16000 Гц
             "-ac", "1",
             str(speaker_file)
         ]
@@ -420,115 +422,173 @@ class CoquiXTTS:
         return str(speaker_file)
     
     def _load_model(self):
-        """Загрузка модели XTTS v2"""
+        """Загрузка модели CosyVoice через funasr"""
         if self.model is not None:
             return
             
         try:
-            from TTS.api import TTS
+            from funasr import AutoModel
             import torch
             
-            logger.info(f"Загрузка локальной модели Coqui XTTS v2: {self.model_name}")
+            logger.info(f"Загрузка локальной модели CosyVoice: {self.model_name}")
             
             # Определение доступных устройств
             if self.device == "cuda" and not torch.cuda.is_available():
                 logger.warning("CUDA не доступна, переключение на CPU")
                 self.device = "cpu"
             
-            # Загрузка модели
-            self.model = TTS(model_name=self.model_name).to(self.device)
+            # Загрузка модели CosyVoice через ModelScope
+            self.model = AutoModel(
+                model=self.model_name,
+                device=self.device,
+                disable_update=True  # Не проверять обновления
+            )
             
-            logger.info("Модель Coqui XTTS v2 успешно загружена")
+            logger.info("Модель CosyVoice успешно загружена")
             
         except ImportError as e:
             logger.error(f"Необходимые библиотеки не установлены: {e}")
-            raise RuntimeError("Установите зависимости: pip install TTS")
+            raise RuntimeError("Установите зависимости: pip install funasr modelscope")
         except Exception as e:
             logger.error(f"Ошибка загрузки модели: {e}")
             raise
     
     def _synthesize_segment(self, text: str, output_file: Path, speaker_wav: Optional[str] = None) -> str:
-        """Синтез одного сегмента текста в аудио"""
+        """Синтез одного сегмента текста в аудио с использованием клонирования голоса"""
         import torch
+        import soundfile as sf
+        import librosa
         
         if self.model is None:
             self._load_model()
         
         # Определение языка
-        lang = self.language_map.get(self.target_language, self.language)
+        lang_name = self.language_map.get(self.target_language, "Russian")
         
-        # Использование примера голоса или встроенного спикера
-        temp_file = output_file.with_suffix('.tmp.wav')
-        
+        # Загрузка референсного аудио для клонирования голоса
+        prompt_speech_16k = None
         if speaker_wav and Path(speaker_wav).exists():
-            # Клонирование голоса
-            self.model.tts_to_file(
-                text=text,
-                speaker_wav=speaker_wav,
-                language=lang,
-                file_path=str(temp_file),
-                speed=1.0  # Важно: не ускорять, чтобы не проглатывать окончания
-            )
-        else:
-            # Использование встроенного спикера
-            self.model.tts_to_file(
-                text=text,
-                language=lang,
-                file_path=str(temp_file),
-                speed=1.0
-            )
+            try:
+                # Загружаем аудио и ресемплим до 16kHz если нужно
+                speech, sample_rate = librosa.load(speaker_wav, sr=16000)
+                prompt_speech_16k = torch.from_numpy(speech).unsqueeze(0).float()
+                logger.debug(f"Образец голоса загружен: {speaker_wav}, длительность: {len(speech)/16000:.2f}с")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить образец голоса: {e}, используется спикер по умолчанию")
         
-        # Загружаем аудио для минимальной обработки
-        from pydub import AudioSegment
-        audio = AudioSegment.from_wav(str(temp_file))
-        
-        # Обрезаем ТОЛЬКО очень длинную тишину в начале (>500мс)
-        # Концы НЕ трогаем вообще, чтобы сохранить все фразы целиком
-        silence_threshold = -50  # dBFS
-        start_trim = 0
-        
-        # Ищем начало звука
-        for i in range(0, min(3000, len(audio)), 10):
-            chunk = audio[i:i+10]
-            if chunk.dBFS > silence_threshold:
-                start_trim = i
-                break
-        
-        # Обрезаем только если тишина в начале действительно длинная
-        if start_trim > 500:
-            audio = audio[start_trim:]
-        
-        # Сохраняем результат
-        audio.export(str(output_file), format="wav")
-        
-        # Удаляем временный файл
         try:
-            temp_file.unlink()
-        except:
-            pass
+            # Генерация аудио через CosyVoice
+            # CosyVoice возвращает список с результатом
+            result = self.model.generate(
+                text=text,
+                prompt_speech_16k=prompt_speech_16k,
+                lang=lang_name,
+                stream=False,
+                speed=1.0,  # Нормальная скорость для сохранения окончаний
+            )
+            
+            # Извлекаем аудио из результата
+            # result обычно содержит [{'wav': tensor, 'sample_rate': int}]
+            if isinstance(result, list) and len(result) > 0:
+                audio_data = result[0].get('wav', None)
+                sample_rate = result[0].get('sample_rate', 16000)
+            elif isinstance(result, dict):
+                audio_data = result.get('wav', None)
+                sample_rate = result.get('sample_rate', 16000)
+            else:
+                raise RuntimeError(f"Неожиданный формат результата: {type(result)}")
+            
+            if audio_data is None:
+                raise RuntimeError("Модель вернула пустой результат")
+            
+            # Конвертируем тензор в numpy
+            if hasattr(audio_data, 'cpu'):
+                audio_np = audio_data.cpu().numpy()
+            else:
+                audio_np = audio_data
+            
+            # Нормализация к диапазону [-1, 1]
+            if audio_np.dtype != np.float32:
+                audio_np = audio_np.astype(np.float32)
+            
+            max_val = np.max(np.abs(audio_np))
+            if max_val > 0 and max_val > 1.0:
+                audio_np = audio_np / max_val
+            
+            # Сохраняем аудиофайл
+            sf.write(str(output_file), audio_np, samplerate=sample_rate)
+            
+            return str(output_file)
+            
+        except Exception as e:
+            logger.error(f"Ошибка синтеза: {e}")
+            raise
+    
+    def _resize_audio_to_duration(self, audio_path: Path, target_duration_ms: int) -> str:
+        """Растягивает или сжимает аудио под нужный тайминг без изменения питча"""
+        from pydub import AudioSegment
+        import numpy as np
         
-        return str(output_file)
+        audio = AudioSegment.from_wav(str(audio_path))
+        current_duration_ms = len(audio)
+        
+        # Если аудио уже подходит по длительности (±100мс), не трогаем его
+        if abs(current_duration_ms - target_duration_ms) < 100:
+            return str(audio_path)
+        
+        # Вычисляем коэффициент масштабирования
+        speed_factor = current_duration_ms / target_duration_ms
+        
+        # Используем питчинг для изменения скорости без изменения тона
+        # Для CosyVoice мы просто растягиваем/сжимаем через изменение sample rate
+        import soundfile as sf
+        import librosa
+        
+        # Загружаем аудио
+        data, sample_rate = sf.read(str(audio_path))
+        
+        # Ресемплим для изменения длительности
+        target_length = int(len(data) / speed_factor)
+        resampled_data = librosa.resample(
+            data, 
+            orig_sr=sample_rate, 
+            target_sr=int(sample_rate * speed_factor)
+        )
+        
+        # Обрезаем или дополняем до нужной длины
+        if len(resampled_data) > target_length:
+            resampled_data = resampled_data[:target_length]
+        elif len(resampled_data) < target_length:
+            # Дополняем тишиной если нужно
+            resampled_data = np.pad(resampled_data, (0, target_length - len(resampled_data)))
+        
+        # Сохраняем с оригинальным sample rate
+        output_path = audio_path.with_suffix('.resized.wav')
+        sf.write(str(output_path), resampled_data, sample_rate)
+        
+        return str(output_path)
     
     def synthesize(self) -> List[Dict]:
         """
-        Использование локальной модели Coqui XTTS v2 для синтеза
+        Использование локальной модели CosyVoice для синтеза с клонированием голоса
         Returns:
             List[Dict]: [{"start_time": 0.0, "end_time": 1.5, "text": "...", "filename": "path/to/audio.wav"}]
         """
-        logger.info("Запуск локального Coqui XTTS v2 синтеза")
-        logger.warning(f"Целевой язык: {self.target_language}, XTTS язык: {self.language_map.get(self.target_language, self.language)}")
+        logger.info("Запуск локального CosyVoice синтеза")
+        logger.warning(f"Целевой язык: {self.target_language}, CosyVoice язык: {self.language_map.get(self.target_language, 'Russian')}")
         
         # Если не указан образец голоса, но есть исходное видео - извлекаем голос из него
         if not self.speaker_wav and self.source_video:
             self.speaker_wav = self._extract_speaker_from_video(self.source_video)
         elif not self.speaker_wav:
-            logger.warning("Образец голоса не указан, используется встроенный спикер XTTS")
+            logger.warning("Образец голоса не указан, используется спикер по умолчанию")
         
         for i, sub in enumerate(self.subtitles):
             if not sub.get("text", "").strip():
                 continue
             
             output_file = self.output_path / f"audio_{i:04d}.wav"
+            target_duration_ms = int((sub["end_time"] - sub["start_time"]) * 1000)
             
             try:
                 # Синтез аудио для текущего сегмента
@@ -537,6 +597,17 @@ class CoquiXTTS:
                     output_file,
                     speaker_wav=self.speaker_wav
                 )
+                
+                # Проверяем длительность и при необходимости растягиваем/сжимаем
+                from pydub import AudioSegment
+                audio = AudioSegment.from_wav(audio_path)
+                current_duration_ms = len(audio)
+                
+                # Если аудио слишком короткое или длинное - адаптируем
+                if current_duration_ms < target_duration_ms * 0.8 or current_duration_ms > target_duration_ms * 1.1:
+                    logger.info(f"Сегмент {i}: адаптация длительности {current_duration_ms}мс -> {target_duration_ms}мс")
+                    audio_path = self._resize_audio_to_duration(Path(audio_path), target_duration_ms)
+                
                 sub["filename"] = audio_path
                 logger.info(f"Сгенерировано аудио для сегмента {i+1}/{len(self.subtitles)}: {audio_path}")
                 
@@ -549,7 +620,6 @@ class CoquiXTTS:
     def merge_audio(self, output_path: str) -> str:
         """Объединение всех аудиофрагментов в один файл с правильными таймингами"""
         from pydub import AudioSegment
-        import numpy as np
         
         logger.info("Начало объединения аудиофрагментов...")
         
@@ -558,7 +628,7 @@ class CoquiXTTS:
         
         # Определяем общую длительность видео по последнему таймингу
         if sorted_subs:
-            total_duration_ms = int(sorted_subs[-1]["end_time"] * 1000)
+            total_duration_ms = int(sorted_subs[-1]["end_time"] * 1000) + 100  # +100мс запас
         else:
             total_duration_ms = 0
         
@@ -571,19 +641,17 @@ class CoquiXTTS:
                 continue
             
             try:
-                # НЕ обрезаем тишину! Мы уже обрезали её при синтезе.
-                # audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
-                # НЕ обрезаем тишину! Мы уже обрезали её при синтезе.
-                # audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                audio = AudioSegment.from_wav(sub["filename"])
                 
                 # Рассчитываем позицию наложения
                 start_position_ms = int(sub["start_time"] * 1000)
                 
-                # Обрезаем аудио если оно выходит за рамки end_time
+                # Проверяем что аудио не выходит за рамки end_time
                 max_duration_ms = int(sub["end_time"] * 1000) - start_position_ms
                 if len(audio) > max_duration_ms:
-                    audio = audio[:max_duration_ms]
-                    logger.warning(f"Сегмент {i} обрезан по таймингу")
+                    # Мягкое затухание в конце если обрезаем
+                    audio = audio[:max_duration_ms].fade_out(50)
+                    logger.debug(f"Сегмент {i}: обрезан до {max_duration_ms}мс")
                 
                 # Накладываем аудио на нужную позицию
                 merged = merged.overlay(audio, position=start_position_ms)
@@ -599,50 +667,3 @@ class CoquiXTTS:
         merged.export(str(output_file), format="wav", parameters=["-acodec", "pcm_s16le", "-ar", "16000"])
         logger.info(f"Объединенное аудио сохранено: {output_file}, общая длительность: {len(merged)}мс")
         return str(output_file)
-    
-    def _trim_silence(self, audio: "AudioSegment", silence_threshold: float = -50, min_silence_duration: int = 100) -> "AudioSegment":
-        """
-        Обрезает тишину в начале и конце аудио
-        
-        Args:
-            audio: AudioSegment для обработки
-            silence_threshold: Порог тишины в dBFS (по умолчанию -50)
-            min_silence_duration: Минимальная длительность тишины в мс для обрезки
-        
-        Returns:
-            AudioSegment с обрезанной тишиной
-        """
-        # Импорт удалён - функции реализованы вручную ниже
-        
-        # Обрезаем тишину в начале
-        leading_silence = self._detect_leading_silence(audio, silence_threshold=silence_threshold)
-        if leading_silence > min_silence_duration:
-            audio = audio[leading_silence:]
-        
-        # Обрезаем тишину в конце
-        trailing_silence = self._detect_trailing_silence(audio, silence_threshold=silence_threshold)
-        if trailing_silence > min_silence_duration:
-            audio = audio[:-trailing_silence]
-        
-        return audio
-    def _detect_leading_silence(self, audio, silence_threshold=-50):
-        """Обнаруживает тишину в начале аудио (в мс)"""
-        silence_duration = 0
-        for i in range(0, len(audio), 10):  # шаг 10 мс
-            segment = audio[i:i+10]
-            if segment.dBFS < silence_threshold:
-                silence_duration += 10
-            else:
-                break
-        return silence_duration
-    
-    def _detect_trailing_silence(self, audio, silence_threshold=-50):
-        """Обнаруживает тишину в конце аудио (в мс)"""
-        silence_duration = 0
-        for i in range(len(audio) - 10, -1, -10):  # шаг 10 мс назад
-            segment = audio[i:i+10]
-            if segment.dBFS < silence_threshold:
-                silence_duration += 10
-            else:
-                break
-        return silence_duration
