@@ -109,8 +109,8 @@ class Translator:
             
             logger.info(f"Loading NLLB model for translation to {self.target_language}...")
             
-            # Загружаем модель и токенизатор
-            model_name = "facebook/nllb-200-distilled-600M"
+            # Загружаем модель и токенизатор - используем более качественную модель
+            model_name = "facebook/nllb-200-distilled-1.3B"  # Улучшенная модель (1.3B вместо 600M)
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
             
@@ -131,7 +131,7 @@ class Translator:
                 forced_bos_token_id = tokenizer.convert_tokens_to_ids(target_lang_code)
             
             translated_subtitles = []
-            batch_size = 5  # Меньший размер батча для экономии памяти
+            batch_size = 3  # Меньший размер батча для экономии памяти
             
             for i in range(0, len(self.subtitles), batch_size):
                 batch = self.subtitles[i:i + batch_size]
@@ -146,12 +146,16 @@ class Translator:
                     max_length=512
                 ).to(device)
                 
-                # Генерация перевода
+                # Генерация перевода с улучшенными параметрами
                 with torch.no_grad():
                     outputs = model.generate(
                         **inputs,
                         forced_bos_token_id=forced_bos_token_id,
-                        max_length=512
+                        max_length=512,
+                        num_beams=5,  # Beam search для лучшего качества
+                        length_penalty=1.0,
+                        do_sample=False,
+                        early_stopping=True
                     )
                 
                 # Декодирование
