@@ -47,9 +47,11 @@ def main():
                                  help="目标语言代码 (如：en, zh, ja)")
     translate_group.add_argument("--transformers", action="store_true", 
                                  help="Использовать локальную модель Transformers (NLLB) вместо LLM API")
+    translate_group.add_argument("--browser-translate", action="store_true", 
+                                 help="Использовать бесплатный браузерный перевод (Bing/Google) без API ключа")
     translate_group.add_argument("--llm-api", default=None, 
                                  help="LLM API 地址 (如：https://api.openai.com/v1, https://api.deepseek.com/v1)")
-    translate_group.add_argument("--llm-key", help="LLM API Key (не требуется при использовании --transformers)")
+    translate_group.add_argument("--llm-key", help="LLM API Key (не требуется при использовании --transformers или --browser-translate)")
     translate_group.add_argument("--llm-model", default="gpt-3.5-turbo", help="LLM 模型名称")
     translate_group.add_argument("--llm-provider", choices=["openai", "deepseek", "qwen", "custom"], default="openai",
                                  help="LLM 提供商类型")
@@ -156,8 +158,14 @@ def run_translate(args):
     # 解析 SRT
     subtitles = parse_srt(source_srt)
     
-    # Перевод через Transformers или LLM API
-    if args.transformers:
+    # Перевод через Transformers, Browser или LLM API
+    if args.browser_translate:
+        translator = Translator(
+            subtitles=subtitles,
+            target_language=args.target_lang,
+            use_browser_translate=True
+        )
+    elif args.transformers:
         translator = Translator(
             subtitles=subtitles,
             target_language=args.target_lang,
