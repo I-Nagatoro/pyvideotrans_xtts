@@ -1,0 +1,452 @@
+Metadata-Version: 2.4
+Name: pyvideotrans-cli
+Version: 0.1.0
+Summary: 精简版视频翻译 CLI 工具 - 支持 Whisper 转录、本地 LLM 翻译、Qwen TTS 配音
+Author: Customized from pyvideotrans
+License: MIT
+Project-URL: Homepage, https://github.com/jianchang512/pyvideotrans
+Project-URL: Repository, https://github.com/jianchang512/pyvideotrans.git
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: faster-whisper>=1.0.0
+Requires-Dist: openai-whisper>=20230314
+Requires-Dist: openai>=1.0.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: dashscope>=1.14.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: pydub>=0.25.1
+Requires-Dist: ffmpeg-python>=0.2.0
+Requires-Dist: transformers>=4.40.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchaudio>=2.0.0
+Requires-Dist: accelerate>=0.25.0
+Requires-Dist: soundfile>=0.12.1
+Requires-Dist: TTS>=0.22.0
+Provides-Extra: cuda
+Requires-Dist: torch>=2.0.0; extra == "cuda"
+Requires-Dist: torchaudio>=2.0.0; extra == "cuda"
+Provides-Extra: qwen-local
+Requires-Dist: transformers>=4.40.0; extra == "qwen-local"
+Requires-Dist: accelerate>=0.25.0; extra == "qwen-local"
+Requires-Dist: soundfile>=0.12.1; extra == "qwen-local"
+Provides-Extra: xtts
+Requires-Dist: TTS>=0.22.0; extra == "xtts"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+
+# pyvideotrans-cli
+
+精简版视频翻译 CLI 工具，基于 [pyvideotrans](https://github.com/jianchang512/pyvideotrans) 项目裁剪而成。
+
+## 功能特点
+
+✅ **保留的核心功能:**
+- 🎵 视频→音频提取 (ffmpeg)
+- 🎤 语音识别 (Whisper - faster-whisper / openai-whisper)
+- 🌐 文本翻译 (本地 LLM API - OpenAI 兼容接口)
+- 🔊 TTS 配音 (Qwen TTS API / Local, Coqui XTTS v2)
+- 🎬 音视频合并 (ffmpeg)
+
+❌ **已移除的功能:**
+- GUI 界面
+- 30+ 种其他 TTS 渠道 (仅保留 Qwen TTS)
+- 说话人分离 (diarization)
+- 声音克隆
+- 复杂的音频对齐逻辑
+- 批量处理
+- 其他翻译渠道 (仅保留本地 LLM)
+
+## 安装
+
+### 基础安装
+```bash
+cd pyvideotrans_cli
+pip install -e .
+```
+
+### 带 CUDA 支持
+```bash
+pip install -e ".[cuda]"
+```
+
+### 带 Coqui XTTS 支持
+```bash
+pip install -e ".[xtts]"
+```
+
+### 开发环境
+```bash
+pip install -e ".[dev]"
+```
+
+## 依赖要求
+
+- Python >= 3.10
+- ffmpeg (必须预先安装)
+- NVIDIA GPU + CUDA (可选，用于加速)
+
+## 使用方法
+
+### 完整流程：视频翻译
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --qwen-api-key YOUR_QWEN_API_KEY \
+    --output-dir ./output
+```
+
+### 分步骤执行
+
+#### 1. 仅转录 (语音→字幕)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode transcribe \
+    --whisper-model base \
+    --source-lang auto \
+    --output-dir ./output
+```
+
+输出：`./output/source.srt`
+
+#### 2. 仅翻译 (字幕→翻译字幕)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode translate \
+    --target-lang en \
+    --llm-api http://localhost:1234/v1 \
+    --llm-key not-needed \
+    --llm-model qwen-7b \
+    --output-dir ./output
+```
+
+输出：`./output/en.srt`
+
+#### 3. 仅 TTS (翻译字幕→配音音频)
+
+##### Qwen TTS API 模式
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode tts \
+    --target-lang en \
+    --qwen-api-key YOUR_KEY \
+    --qwen-voice Cherry \
+    --output-dir ./output
+```
+
+##### Coqui XTTS v2 本地模式
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode tts \
+    --target-lang en \
+    --xtts \
+    --cuda \
+    --output-dir ./output
+```
+
+##### Coqui XTTS v2 声音克隆
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode tts \
+    --target-lang ru \
+    --xtts \
+    --xtts-speaker /path/to/speaker_sample.wav \
+    --xtts-language ru \
+    --cuda \
+    --output-dir ./output
+```
+
+输出：`./output/dubbed.wav`
+
+#### 4. 仅合并 (视频 + 配音→最终视频)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode merge \
+    --target-lang en \
+    --add-subtitles \
+    --hardsub \
+    --output-dir ./output
+```
+
+输出：`./output/video_dubbed.mp4`
+
+## 参数说明
+
+### 核心参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-i, --input` | 输入视频文件路径 (必选) | - |
+| `-o, --output-dir` | 输出目录 | `./output` |
+| `--mode` | 运行模式 | `full` |
+
+### 转录参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--whisper-model` | Whisper 模型大小 | `tiny` |
+| `--source-lang` | 源语言代码 | `auto` |
+| `--cuda` | 使用 CUDA 加速 | `False` |
+
+### 翻译参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--target-lang` | 目标语言代码 | - |
+| `--transformers` | Использовать локальную модель NLLB вместо LLM API | `False` |
+| `--llm-api` | LLM API 地址 | `http://localhost:1234/v1` |
+| `--llm-key` | LLM API Key | `not-needed` |
+| `--llm-model` | LLM 模型名称 | `local-model` |
+| `--llm-provider` | LLM 提供商类型 | `openai` |
+
+### TTS 参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--qwen-api-key` | Qwen TTS API Key | - |
+| `--qwen-model` | Qwen TTS 模型 | `qwen3-tts-flash` |
+| `--qwen-voice` | Qwen TTS 音色 | `Cherry` |
+| `--qwen-local` | 使用本地 Qwen TTS | `False` |
+| `--qwen-local-model` | 本地 Qwen 模型大小 | `1.7B` |
+| `--xtts` | 使用 Coqui XTTS v2 | `False` |
+| `--xtts-model` | XTTS 模型名称 | `tts_models/multilingual/multi-dataset/xtts_v2` |
+| `--xtts-speaker` | 示例语音文件路径 (用于声音克隆) | - |
+| `--xtts-language` | XTTS 合成语言代码 | `en` |
+
+### 合并参数
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--keep-original-audio` | 保留原始音频 (混合) | `False` |
+| `--add-subtitles` | 添加字幕到视频 | `False` |
+| `--hardsub` | 硬字幕 (烧录) | `False` |
+
+## Pipeline 流程
+
+```
+┌─────────────┐
+│  Input Video │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ Extract Audio│ (ffmpeg)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  Transcribe │ (Whisper)
+└──────┬──────┘
+       │ source.srt
+       ▼
+┌─────────────┐
+│  Translate  │ (Local LLM)
+└──────┬──────┘
+       │ {lang}.srt
+       ▼
+┌─────────────┐
+│     TTS     │ (Qwen TTS)
+└──────┬──────┘
+       │ dubbed.wav
+       ▼
+┌─────────────┐
+│    Merge    │ (ffmpeg)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ Output Video│
+└─────────────┘
+```
+
+## 本地 LLM 配置示例
+
+### 使用 LM Studio
+```bash
+# 启动 LM Studio 并加载模型
+# API 地址：http://localhost:1234/v1
+
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --llm-api http://localhost:1234/v1 \
+    --llm-model local-model
+```
+
+### 使用 Ollama
+```bash
+# 启动 Ollama
+ollama run qwen:7b
+
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --llm-api http://localhost:11434/v1 \
+    --llm-model qwen:7b
+```
+
+### Локальный перевод через Transformers (NLLB)
+
+Для перевода без необходимости в API можно использовать модель NLLB от Meta:
+
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang ru \
+    --transformers
+```
+
+Этот режим использует модель `facebook/nllb-200-distilled-600M`, которая поддерживает более 200 языков.
+Модель будет автоматически загружена при первом запуске (требуется ~2GB места на диске).
+
+#### Преимущества локального перевода:
+- ✅ Не требуется API ключ
+- ✅ Полностью офлайн работа
+- ✅ Поддержка 200+ языков
+- ✅ Бесплатно
+
+#### Недостатки:
+- ⚠️ Медленнее чем LLM API
+- ⚠️ Требует больше памяти (минимум 4GB RAM)
+- ⚠️ Качество перевода может быть ниже чем у больших LLM
+
+#### Поддерживаемые языковые коды:
+`ru`, `en`, `zh`, `ja`, `ko`, `de`, `fr`, `es`, `it`, `pt` и многие другие.
+
+### 使用 vLLM
+```bash
+python -m vllm.entrypoints.api_server \
+    --model Qwen/Qwen-7B-Chat \
+    --port 8000
+
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --llm-api http://localhost:8000/v1 \
+    --llm-model Qwen/Qwen-7B-Chat
+```
+
+## Qwen TTS 配置
+
+### API 模式
+
+#### 获取 API Key
+1. 访问 https://dashscope.console.aliyun.com/
+2. 注册/登录阿里云账号
+3. 创建 API Key
+
+#### 可用音色
+- Cherry (女声，推荐)
+- Emily (女声)
+- Serena (女声)
+- Ethan (男声)
+- Jack (男声)
+
+#### 使用示例
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --qwen-api-key YOUR_API_KEY \
+    --qwen-voice Cherry
+```
+
+### Локальная версия (через transformers)
+
+#### Требования
+- GPU с минимум 8GB VRAM (для модели 0.7B)
+- Установленные зависимости: `pip install transformers accelerate torch torchaudio soundfile`
+
+#### Использование
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --qwen-local \
+    --qwen-local-model "Qwen/Qwen3-TTS-0.7B" \
+    --cuda
+```
+
+#### Поддерживаемые модели
+- `Qwen/Qwen3-TTS-0.7B` (рекомендуется)
+- `Qwen/Qwen3-TTS-1.5B` (требует больше VRAM)
+
+Модель будет автоматически загружена из HuggingFace при первом запуске.
+
+#### На CPU (медленнее)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --qwen-local \
+    --qwen-local-model "Qwen/Qwen3-TTS-0.7B"
+```
+
+### Coqui XTTS v2 (локальная модель с поддержкой клонирования голоса)
+
+#### Преимущества XTTS v2
+- ✅ Поддержка 16+ языков (включая русский, английский, китайский и др.)
+- ✅ Возможность клонирования голоса по образцу (3-10 секунд аудио)
+- ✅ Высокое качество синтеза
+- ✅ Полностью офлайн работа после загрузки модели
+
+#### Требования
+- GPU с минимум 6GB VRAM (рекомендуется 8GB+)
+- Установленные зависимости: `pip install TTS`
+- Для клонирования голоса: WAV файл с образцом речи (3-10 секунд)
+
+#### Поддерживаемые языки
+`en`, `zh-cn`, `fr`, `de`, `es`, `it`, `pt`, `pl`, `tr`, `ru`, `nl`, `cs`, `ar`, `hu`, `ko`, `ja`, `hi`
+
+#### Использование без клонирования голоса
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang ru \
+    --xtts \
+    --cuda \
+    --output-dir ./output
+```
+
+#### Использование с клонированием голоса
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang ru \
+    --xtts \
+    --xtts-speaker /path/to/speaker_sample.wav \
+    --xtts-language ru \
+    --cuda \
+    --output-dir ./output
+```
+
+#### На CPU (очень медленно, не рекомендуется)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --xtts \
+    --output-dir ./output
+```
+
+#### Подготовка образца голоса для клонирования
+Для лучшего качества клонирования:
+- Используйте WAV файл с частотой дискретизации 22050 Гц или выше
+- Длительность образца: 3-10 секунд
+- Чистый звук без фонового шума
+- Один спикер (без переключения между говорящими)
+
+Пример конвертации в нужный формат:
+```bash
+ffmpeg -i input.mp3 -ar 22050 -ac 1 speaker_sample.wav
+```
+
+## TODO
+
+- [x] Реализация локального Qwen TTS через transformers
+- [x] Локальный перевод через Transformers (NLLB)
+- [x] Интеграция Coqui XTTS v2 с поддержкой клонирования голоса
+- [ ] Добавить оптимизацию длительности аудио (подгонка под тайминги)
+- [ ] Добавить отображение прогресса (progress bar)
+- [ ] Поддержка пакетной обработки файлов
+- [ ] Улучшить обработку ошибок при загрузке моделей
+
+## 许可证
+
+MIT License (继承自原项目)
+
+## 致谢
+
+本项目基于 [pyvideotrans](https://github.com/jianchang512/pyvideotrans) 裁剪开发，感谢原作者的贡献。

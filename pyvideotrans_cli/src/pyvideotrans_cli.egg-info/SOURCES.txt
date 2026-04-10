@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/pyvideotrans_cli/__init__.py
+src/pyvideotrans_cli/cli.py
+src/pyvideotrans_cli/core.py
+src/pyvideotrans_cli/transcribe.py
+src/pyvideotrans_cli/translate.py
+src/pyvideotrans_cli/tts.py
+src/pyvideotrans_cli/video.py
+src/pyvideotrans_cli.egg-info/PKG-INFO
+src/pyvideotrans_cli.egg-info/SOURCES.txt
+src/pyvideotrans_cli.egg-info/dependency_links.txt
+src/pyvideotrans_cli.egg-info/entry_points.txt
+src/pyvideotrans_cli.egg-info/requires.txt
+src/pyvideotrans_cli.egg-info/top_level.txt
