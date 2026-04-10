@@ -1,5 +1,5 @@
 """
-TTS 配音模块 - 使用 Qwen TTS (API / Local)
+TTS 配音模块 - 使用 Qwen TTS (API / Local) и Coqui XTTS v2
 """
 import json
 import logging
@@ -242,6 +242,152 @@ class QwenTTSLocal:
             try:
                 # Синтез аудио для текущего сегмента
                 audio_path = self._synthesize_segment(sub["text"], output_file)
+                sub["filename"] = audio_path
+                logger.info(f"Сгенерировано аудио для сегмента {i+1}/{len(self.subtitles)}: {audio_path}")
+                
+            except Exception as e:
+                logger.error(f"Ошибка синтеза для сегмента {i}: {e}")
+                raise
+        
+        return self.subtitles
+    
+    def merge_audio(self, output_path: str) -> str:
+        """Объединение всех аудиофрагментов в один файл"""
+        from pydub import AudioSegment
+        
+        merged = AudioSegment.empty()
+        
+        for sub in self.subtitles:
+            if "filename" in sub and Path(sub["filename"]).exists():
+                audio = AudioSegment.from_wav(sub["filename"])
+                # Добавление тишины согласно таймингам
+                silence_duration = int(sub["start_time"] * 1000) - len(merged)
+                if silence_duration > 0:
+                    merged += AudioSegment.silent(duration=silence_duration)
+                merged += audio
+        
+        output_file = Path(output_path)
+        merged.export(str(output_file), format="wav")
+        logger.info(f"Объединенное аудио сохранено: {output_file}")
+        return str(output_file)
+
+
+@dataclass
+class CoquiXTTS:
+    """Coqui XTTS v2 - локальная модель TTS с поддержкой множественных языков"""
+    subtitles: List[Dict]
+    target_language: str = "en"
+    model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+    output_dir: str = "./output"
+    device: str = "cuda"  # "cuda" или "cpu"
+    speaker_wav: Optional[str] = None  # Путь к примеру голоса для клонирования
+    language: str = "en"  # Язык синтеза
+    
+    def __post_init__(self):
+        self.output_path = Path(self.output_dir)
+        self.output_path.mkdir(parents=True, exist_ok=True)
+        self.model = None
+        
+        # Маппинг кодов языков для XTTS
+        self.language_map = {
+            "en": "en",
+            "zh": "zh-cn",
+            "fr": "fr",
+            "de": "de",
+            "es": "es",
+            "it": "it",
+            "pt": "pt",
+            "pl": "pl",
+            "tr": "tr",
+            "ru": "ru",
+            "nl": "nl",
+            "cs": "cs",
+            "ar": "ar",
+            "hu": "hu",
+            "ko": "ko",
+            "ja": "ja",
+            "hi": "hi",
+        }
+    
+    def _load_model(self):
+        """Загрузка модели XTTS v2"""
+        if self.model is not None:
+            return
+            
+        try:
+            from TTS.api import TTS
+            import torch
+            
+            logger.info(f"Загрузка локальной модели Coqui XTTS v2: {self.model_name}")
+            
+            # Определение доступных устройств
+            if self.device == "cuda" and not torch.cuda.is_available():
+                logger.warning("CUDA не доступна, переключение на CPU")
+                self.device = "cpu"
+            
+            # Загрузка модели
+            self.model = TTS(model_name=self.model_name).to(self.device)
+            
+            logger.info("Модель Coqui XTTS v2 успешно загружена")
+            
+        except ImportError as e:
+            logger.error(f"Необходимые библиотеки не установлены: {e}")
+            raise RuntimeError("Установите зависимости: pip install TTS")
+        except Exception as e:
+            logger.error(f"Ошибка загрузки модели: {e}")
+            raise
+    
+    def _synthesize_segment(self, text: str, output_file: Path, speaker_wav: Optional[str] = None) -> str:
+        """Синтез одного сегмента текста в аудио"""
+        import torch
+        
+        if self.model is None:
+            self._load_model()
+        
+        # Определение языка
+        lang = self.language_map.get(self.target_language, self.language)
+        
+        # Использование примера голоса или встроенного спикера
+        if speaker_wav and Path(speaker_wav).exists():
+            # Клонирование голоса
+            self.model.tts_to_file(
+                text=text,
+                speaker_wav=speaker_wav,
+                language=lang,
+                file_path=str(output_file)
+            )
+        else:
+            # Использование встроенного спикера
+            self.model.tts_to_file(
+                text=text,
+                language=lang,
+                file_path=str(output_file)
+            )
+        
+        return str(output_file)
+    
+    def synthesize(self) -> List[Dict]:
+        """
+        Использование локальной модели Coqui XTTS v2 для синтеза
+        Returns:
+            List[Dict]: [{"start_time": 0.0, "end_time": 1.5, "text": "...", "filename": "path/to/audio.wav"}]
+        """
+        logger.info("Запуск локального Coqui XTTS v2 синтеза")
+        logger.warning(f"Целевой язык: {self.target_language}, XTTS язык: {self.language_map.get(self.target_language, self.language)}")
+        
+        for i, sub in enumerate(self.subtitles):
+            if not sub.get("text", "").strip():
+                continue
+            
+            output_file = self.output_path / f"audio_{i:04d}.wav"
+            
+            try:
+                # Синтез аудио для текущего сегмента
+                audio_path = self._synthesize_segment(
+                    sub["text"], 
+                    output_file,
+                    speaker_wav=self.speaker_wav
+                )
                 sub["filename"] = audio_path
                 logger.info(f"Сгенерировано аудио для сегмента {i+1}/{len(self.subtitles)}: {audio_path}")
                 

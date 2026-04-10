@@ -35,6 +35,7 @@ dependencies = [
     "torchaudio>=2.0.0",
     "accelerate>=0.25.0",
     "soundfile>=0.12.1",
+    "coqui-tts>=0.22.0",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,9 @@ qwen-local = [
     "transformers>=4.40.0",
     "accelerate>=0.25.0",
     "soundfile>=0.12.1",
+]
+xtts = [
+    "coqui-tts>=0.22.0",
 ]
 dev = [
     "pytest>=7.0.0",
