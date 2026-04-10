@@ -183,12 +183,12 @@ class Translator:
     def _translate_with_browser(self) -> List[Dict]:
         """Перевод через бесплатные сервисы (Bing/Google) без API ключа"""
         try:
-            from deep_translator import MicrosoftTranslator, GoogleTranslator
+            import translators as ts
             import time
             
-            logger.info("Using browser-based translation (Bing)...")
+            logger.info("Using browser-based translation (Bing via translators library)...")
             
-            # Маппинг языковых кодов для Bing/Google
+            # Маппинг языковых кодов для translators (ISO 639-1)
             lang_map = {
                 'ru': 'ru',
                 'en': 'en',
@@ -211,10 +211,8 @@ class Translator:
                 'id': 'id',
             }
             
-            target_lang = lang_map.get(self.target_language.lower(), self.target_language)
-            
-            # Используем Microsoft Translator (Bing) - более стабилен для субтитров
-            translator = MicrosoftTranslator(target=target_lang)
+            from_lang = 'auto'  # Автоопределение исходного языка
+            to_lang = lang_map.get(self.target_language.lower(), self.target_language)
             
             translated_subtitles = []
             
@@ -227,18 +225,29 @@ class Translator:
                         translated_subtitles.append(sub.copy())
                         continue
                     
-                    # Перевод
-                    translated_text = translator.translate(text)
+                    # Перевод через Bing с явным указанием сервиса
+                    translation_result = ts.translate_text(
+                        text,
+                        from_language=from_lang,
+                        to_language=to_lang,
+                        translator='bing'
+                    )
+                    
+                    # Проверка результата
+                    if translation_result is None or not isinstance(translation_result, str):
+                        logger.warning(f"Translators returned invalid result for subtitle {i}")
+                        translated_subtitles.append(sub.copy())
+                        continue
                     
                     translated_subtitles.append({
                         "start_time": sub["start_time"],
                         "end_time": sub["end_time"],
-                        "text": translated_text if translated_text else text
+                        "text": translation_result.strip()
                     })
                     
                     # Небольшая задержка чтобы не блокировали
                     if (i + 1) % 10 == 0:
-                        time.sleep(0.5)
+                        time.sleep(0.3)
                     
                     if (i + 1) % 20 == 0:
                         logger.info(f"Translated {i + 1}/{len(self.subtitles)} subtitles...")

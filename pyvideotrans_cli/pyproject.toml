@@ -36,6 +36,7 @@ dependencies = [
     "accelerate>=0.25.0",
     "soundfile>=0.12.1",
     "coqui-tts>=0.22.0",
+    "translators>=5.7.0",
 ]
 
 [project.optional-dependencies]
