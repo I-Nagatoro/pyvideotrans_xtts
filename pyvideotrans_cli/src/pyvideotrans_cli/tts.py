@@ -317,19 +317,41 @@ class QwenTTSLocal:
         Returns:
             AudioSegment с обрезанной тишиной
         """
-        from pydub.silence import detect_leading_silence, detect_trailing_silence
+        # Импорт удалён - функции реализованы вручную ниже
         
         # Обрезаем тишину в начале
-        leading_silence = detect_leading_silence(audio, silence_threshold=silence_threshold)
+        leading_silence = self._detect_leading_silence(audio, silence_threshold=silence_threshold)
         if leading_silence > min_silence_duration:
             audio = audio[leading_silence:]
         
         # Обрезаем тишину в конце
-        trailing_silence = detect_trailing_silence(audio, silence_threshold=silence_threshold)
+        trailing_silence = self._detect_trailing_silence(audio, silence_threshold=silence_threshold)
         if trailing_silence > min_silence_duration:
             audio = audio[:-trailing_silence]
         
         return audio
+    
+    def _detect_leading_silence(self, audio, silence_threshold=-50):
+        """Обнаруживает тишину в начале аудио (в мс)"""
+        silence_duration = 0
+        for i in range(0, len(audio), 10):  # шаг 10 мс
+            segment = audio[i:i+10]
+            if segment.dBFS < silence_threshold:
+                silence_duration += 10
+            else:
+                break
+        return silence_duration
+    
+    def _detect_trailing_silence(self, audio, silence_threshold=-50):
+        """Обнаруживает тишину в конце аудио (в мс)"""
+        silence_duration = 0
+        for i in range(len(audio) - 10, -1, -10):  # шаг 10 мс назад
+            segment = audio[i:i+10]
+            if segment.dBFS < silence_threshold:
+                silence_duration += 10
+            else:
+                break
+        return silence_duration
 
 
 @dataclass
@@ -557,16 +579,37 @@ class CoquiXTTS:
         Returns:
             AudioSegment с обрезанной тишиной
         """
-        from pydub.silence import detect_leading_silence, detect_trailing_silence
+        # Импорт удалён - функции реализованы вручную ниже
         
         # Обрезаем тишину в начале
-        leading_silence = detect_leading_silence(audio, silence_threshold=silence_threshold)
+        leading_silence = self._detect_leading_silence(audio, silence_threshold=silence_threshold)
         if leading_silence > min_silence_duration:
             audio = audio[leading_silence:]
         
         # Обрезаем тишину в конце
-        trailing_silence = detect_trailing_silence(audio, silence_threshold=silence_threshold)
+        trailing_silence = self._detect_trailing_silence(audio, silence_threshold=silence_threshold)
         if trailing_silence > min_silence_duration:
             audio = audio[:-trailing_silence]
         
         return audio
+    def _detect_leading_silence(self, audio, silence_threshold=-50):
+        """Обнаруживает тишину в начале аудио (в мс)"""
+        silence_duration = 0
+        for i in range(0, len(audio), 10):  # шаг 10 мс
+            segment = audio[i:i+10]
+            if segment.dBFS < silence_threshold:
+                silence_duration += 10
+            else:
+                break
+        return silence_duration
+    
+    def _detect_trailing_silence(self, audio, silence_threshold=-50):
+        """Обнаруживает тишину в конце аудио (в мс)"""
+        silence_duration = 0
+        for i in range(len(audio) - 10, -1, -10):  # шаг 10 мс назад
+            segment = audio[i:i+10]
+            if segment.dBFS < silence_threshold:
+                silence_duration += 10
+            else:
+                break
+        return silence_duration
