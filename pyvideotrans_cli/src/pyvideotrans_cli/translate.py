@@ -226,16 +226,25 @@ class Translator:
                         continue
                     
                     # Перевод через Bing с явным указанием сервиса
+                    # Используем api_type='browser' для стабильности
                     translation_result = ts.translate_text(
                         text,
                         from_language=from_lang,
                         to_language=to_lang,
-                        translator='bing'
+                        translator='bing',
+                        api_type='browser',
+                        timeout=10
                     )
                     
                     # Проверка результата
                     if translation_result is None or not isinstance(translation_result, str):
                         logger.warning(f"Translators returned invalid result for subtitle {i}")
+                        translated_subtitles.append(sub.copy())
+                        continue
+                    
+                    # Проверяем что результат не пустой и не совпадает с оригиналом
+                    if not translation_result.strip() or translation_result.strip() == text.strip():
+                        logger.warning(f"Translation result is empty or same as original for subtitle {i}")
                         translated_subtitles.append(sub.copy())
                         continue
                     
@@ -246,8 +255,8 @@ class Translator:
                     })
                     
                     # Небольшая задержка чтобы не блокировали
-                    if (i + 1) % 10 == 0:
-                        time.sleep(0.3)
+                    if (i + 1) % 5 == 0:
+                        time.sleep(0.2)
                     
                     if (i + 1) % 20 == 0:
                         logger.info(f"Translated {i + 1}/{len(self.subtitles)} subtitles...")

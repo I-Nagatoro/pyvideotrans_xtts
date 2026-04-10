@@ -252,24 +252,84 @@ class QwenTTSLocal:
         return self.subtitles
     
     def merge_audio(self, output_path: str) -> str:
-        """Объединение всех аудиофрагментов в один файл"""
+        """Объединение всех аудиофрагментов в один файл с правильными таймингами"""
         from pydub import AudioSegment
+        import numpy as np
         
-        merged = AudioSegment.empty()
+        logger.info("Начало объединения аудиофрагментов...")
         
-        for sub in self.subtitles:
-            if "filename" in sub and Path(sub["filename"]).exists():
+        # Сортируем субтитры по времени начала
+        sorted_subs = sorted(self.subtitles, key=lambda x: x["start_time"])
+        
+        # Определяем общую длительность видео по последнему таймингу
+        if sorted_subs:
+            total_duration_ms = int(sorted_subs[-1]["end_time"] * 1000)
+        else:
+            total_duration_ms = 0
+        
+        # Создаём пустой аудиофайл нужной длительности
+        merged = AudioSegment.silent(duration=total_duration_ms)
+        
+        for i, sub in enumerate(sorted_subs):
+            if "filename" not in sub or not Path(sub["filename"]).exists():
+                logger.warning(f"Аудиофайл для сегмента {i} не найден, пропускаем")
+                continue
+            
+            try:
                 audio = AudioSegment.from_wav(sub["filename"])
-                # Добавление тишины согласно таймингам
-                silence_duration = int(sub["start_time"] * 1000) - len(merged)
-                if silence_duration > 0:
-                    merged += AudioSegment.silent(duration=silence_duration)
-                merged += audio
+                
+                # Обрезаем тишину в начале и конце аудио (очистка артефактов)
+                audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                
+                # Рассчитываем позицию наложения
+                start_position_ms = int(sub["start_time"] * 1000)
+                
+                # Обрезаем аудио если оно выходит за рамки end_time
+                max_duration_ms = int(sub["end_time"] * 1000) - start_position_ms
+                if len(audio) > max_duration_ms:
+                    audio = audio[:max_duration_ms]
+                    logger.warning(f"Сегмент {i} обрезан по таймингу")
+                
+                # Накладываем аудио на нужную позицию
+                merged = merged.overlay(audio, position=start_position_ms)
+                
+                logger.debug(f"Сегмент {i}: начало={start_position_ms}мс, длительность={len(audio)}мс")
+                
+            except Exception as e:
+                logger.error(f"Ошибка при обработке сегмента {i}: {e}")
+                continue
         
+        # Экспортируем результат
         output_file = Path(output_path)
-        merged.export(str(output_file), format="wav")
-        logger.info(f"Объединенное аудио сохранено: {output_file}")
+        merged.export(str(output_file), format="wav", parameters=["-acodec", "pcm_s16le", "-ar", "16000"])
+        logger.info(f"Объединенное аудио сохранено: {output_file}, общая длительность: {len(merged)}мс")
         return str(output_file)
+    
+    def _trim_silence(self, audio: "AudioSegment", silence_threshold: float = -50, min_silence_duration: int = 100) -> "AudioSegment":
+        """
+        Обрезает тишину в начале и конце аудио
+        
+        Args:
+            audio: AudioSegment для обработки
+            silence_threshold: Порог тишины в dBFS (по умолчанию -50)
+            min_silence_duration: Минимальная длительность тишины в мс для обрезки
+        
+        Returns:
+            AudioSegment с обрезанной тишиной
+        """
+        from pydub.silence import detect_leading_silence, detect_trailing_silence
+        
+        # Обрезаем тишину в начале
+        leading_silence = detect_leading_silence(audio, silence_threshold=silence_threshold)
+        if leading_silence > min_silence_duration:
+            audio = audio[leading_silence:]
+        
+        # Обрезаем тишину в конце
+        trailing_silence = detect_trailing_silence(audio, silence_threshold=silence_threshold)
+        if trailing_silence > min_silence_duration:
+            audio = audio[:-trailing_silence]
+        
+        return audio
 
 
 @dataclass
@@ -432,21 +492,81 @@ class CoquiXTTS:
         return self.subtitles
     
     def merge_audio(self, output_path: str) -> str:
-        """Объединение всех аудиофрагментов в один файл"""
+        """Объединение всех аудиофрагментов в один файл с правильными таймингами"""
         from pydub import AudioSegment
+        import numpy as np
         
-        merged = AudioSegment.empty()
+        logger.info("Начало объединения аудиофрагментов...")
         
-        for sub in self.subtitles:
-            if "filename" in sub and Path(sub["filename"]).exists():
+        # Сортируем субтитры по времени начала
+        sorted_subs = sorted(self.subtitles, key=lambda x: x["start_time"])
+        
+        # Определяем общую длительность видео по последнему таймингу
+        if sorted_subs:
+            total_duration_ms = int(sorted_subs[-1]["end_time"] * 1000)
+        else:
+            total_duration_ms = 0
+        
+        # Создаём пустой аудиофайл нужной длительности
+        merged = AudioSegment.silent(duration=total_duration_ms)
+        
+        for i, sub in enumerate(sorted_subs):
+            if "filename" not in sub or not Path(sub["filename"]).exists():
+                logger.warning(f"Аудиофайл для сегмента {i} не найден, пропускаем")
+                continue
+            
+            try:
                 audio = AudioSegment.from_wav(sub["filename"])
-                # Добавление тишины согласно таймингам
-                silence_duration = int(sub["start_time"] * 1000) - len(merged)
-                if silence_duration > 0:
-                    merged += AudioSegment.silent(duration=silence_duration)
-                merged += audio
+                
+                # Обрезаем тишину в начале и конце аудио (очистка артефактов)
+                audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                
+                # Рассчитываем позицию наложения
+                start_position_ms = int(sub["start_time"] * 1000)
+                
+                # Обрезаем аудио если оно выходит за рамки end_time
+                max_duration_ms = int(sub["end_time"] * 1000) - start_position_ms
+                if len(audio) > max_duration_ms:
+                    audio = audio[:max_duration_ms]
+                    logger.warning(f"Сегмент {i} обрезан по таймингу")
+                
+                # Накладываем аудио на нужную позицию
+                merged = merged.overlay(audio, position=start_position_ms)
+                
+                logger.debug(f"Сегмент {i}: начало={start_position_ms}мс, длительность={len(audio)}мс")
+                
+            except Exception as e:
+                logger.error(f"Ошибка при обработке сегмента {i}: {e}")
+                continue
         
+        # Экспортируем результат
         output_file = Path(output_path)
-        merged.export(str(output_file), format="wav")
-        logger.info(f"Объединенное аудио сохранено: {output_file}")
+        merged.export(str(output_file), format="wav", parameters=["-acodec", "pcm_s16le", "-ar", "16000"])
+        logger.info(f"Объединенное аудио сохранено: {output_file}, общая длительность: {len(merged)}мс")
         return str(output_file)
+    
+    def _trim_silence(self, audio: "AudioSegment", silence_threshold: float = -50, min_silence_duration: int = 100) -> "AudioSegment":
+        """
+        Обрезает тишину в начале и конце аудио
+        
+        Args:
+            audio: AudioSegment для обработки
+            silence_threshold: Порог тишины в dBFS (по умолчанию -50)
+            min_silence_duration: Минимальная длительность тишины в мс для обрезки
+        
+        Returns:
+            AudioSegment с обрезанной тишиной
+        """
+        from pydub.silence import detect_leading_silence, detect_trailing_silence
+        
+        # Обрезаем тишину в начале
+        leading_silence = detect_leading_silence(audio, silence_threshold=silence_threshold)
+        if leading_silence > min_silence_duration:
+            audio = audio[leading_silence:]
+        
+        # Обрезаем тишину в конце
+        trailing_silence = detect_trailing_silence(audio, silence_threshold=silence_threshold)
+        if trailing_silence > min_silence_duration:
+            audio = audio[:-trailing_silence]
+        
+        return audio
