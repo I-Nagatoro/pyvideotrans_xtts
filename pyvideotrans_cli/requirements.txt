@@ -1,0 +1,27 @@
+# Core dependencies
+ffmpeg-python>=0.2.0
+openai-whisper>=20231117
+faster-whisper>=0.10.0; sys_platform != 'win32'
+
+# Translation (OpenAI compatible API)
+requests>=2.31.0
+openai>=1.0.0
+httpx>=0.25.0
+
+# Translation - Local Transformers (NLLB)
+transformers>=4.35.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# TTS - Qwen API
+requests>=2.31.0
+
+# TTS - Qwen Local (optional)
+torch>=2.0.0
+torchaudio>=2.0.0
+accelerate>=0.20.0
+soundfile>=0.12.0
+
+# Utilities
+tqdm>=4.66.0
+numpy>=1.24.0
