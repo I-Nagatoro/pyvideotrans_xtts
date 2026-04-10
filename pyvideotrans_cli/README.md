@@ -8,7 +8,7 @@
 - 🎵 视频→音频提取 (ffmpeg)
 - 🎤 语音识别 (Whisper - faster-whisper / openai-whisper)
 - 🌐 文本翻译 (本地 LLM API - OpenAI 兼容接口)
-- 🔊 TTS 配音 (Qwen TTS API / Local)
+- 🔊 TTS 配音 (Qwen TTS API / Local, Coqui XTTS v2)
 - 🎬 音视频合并 (ffmpeg)
 
 ❌ **已移除的功能:**
@@ -31,6 +31,11 @@ pip install -e .
 ### 带 CUDA 支持
 ```bash
 pip install -e ".[cuda]"
+```
+
+### 带 Coqui XTTS 支持
+```bash
+pip install -e ".[xtts]"
 ```
 
 ### 开发环境
@@ -81,12 +86,36 @@ pyvideotrans-cli -i video.mp4 \
 输出：`./output/en.srt`
 
 #### 3. 仅 TTS (翻译字幕→配音音频)
+
+##### Qwen TTS API 模式
 ```bash
 pyvideotrans-cli -i video.mp4 \
     --mode tts \
     --target-lang en \
     --qwen-api-key YOUR_KEY \
     --qwen-voice Cherry \
+    --output-dir ./output
+```
+
+##### Coqui XTTS v2 本地模式
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode tts \
+    --target-lang en \
+    --xtts \
+    --cuda \
+    --output-dir ./output
+```
+
+##### Coqui XTTS v2 声音克隆
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --mode tts \
+    --target-lang ru \
+    --xtts \
+    --xtts-speaker /path/to/speaker_sample.wav \
+    --xtts-language ru \
+    --cuda \
     --output-dir ./output
 ```
 
@@ -138,6 +167,10 @@ pyvideotrans-cli -i video.mp4 \
 | `--qwen-voice` | Qwen TTS 音色 | `Cherry` |
 | `--qwen-local` | 使用本地 Qwen TTS | `False` |
 | `--qwen-local-model` | 本地 Qwen 模型大小 | `1.7B` |
+| `--xtts` | 使用 Coqui XTTS v2 | `False` |
+| `--xtts-model` | XTTS 模型名称 | `tts_models/multilingual/multi-dataset/xtts_v2` |
+| `--xtts-speaker` | 示例语音文件路径 (用于声音克隆) | - |
+| `--xtts-language` | XTTS 合成语言代码 | `en` |
 
 ### 合并参数
 | 参数 | 说明 | 默认值 |
@@ -300,10 +333,67 @@ pyvideotrans-cli -i video.mp4 \
     --qwen-local-model "Qwen/Qwen3-TTS-0.7B"
 ```
 
+### Coqui XTTS v2 (локальная модель с поддержкой клонирования голоса)
+
+#### Преимущества XTTS v2
+- ✅ Поддержка 16+ языков (включая русский, английский, китайский и др.)
+- ✅ Возможность клонирования голоса по образцу (3-10 секунд аудио)
+- ✅ Высокое качество синтеза
+- ✅ Полностью офлайн работа после загрузки модели
+
+#### Требования
+- GPU с минимум 6GB VRAM (рекомендуется 8GB+)
+- Установленные зависимости: `pip install TTS`
+- Для клонирования голоса: WAV файл с образцом речи (3-10 секунд)
+
+#### Поддерживаемые языки
+`en`, `zh-cn`, `fr`, `de`, `es`, `it`, `pt`, `pl`, `tr`, `ru`, `nl`, `cs`, `ar`, `hu`, `ko`, `ja`, `hi`
+
+#### Использование без клонирования голоса
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang ru \
+    --xtts \
+    --cuda \
+    --output-dir ./output
+```
+
+#### Использование с клонированием голоса
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang ru \
+    --xtts \
+    --xtts-speaker /path/to/speaker_sample.wav \
+    --xtts-language ru \
+    --cuda \
+    --output-dir ./output
+```
+
+#### На CPU (очень медленно, не рекомендуется)
+```bash
+pyvideotrans-cli -i video.mp4 \
+    --target-lang en \
+    --xtts \
+    --output-dir ./output
+```
+
+#### Подготовка образца голоса для клонирования
+Для лучшего качества клонирования:
+- Используйте WAV файл с частотой дискретизации 22050 Гц или выше
+- Длительность образца: 3-10 секунд
+- Чистый звук без фонового шума
+- Один спикер (без переключения между говорящими)
+
+Пример конвертации в нужный формат:
+```bash
+ffmpeg -i input.mp3 -ar 22050 -ac 1 speaker_sample.wav
+```
+
 ## TODO
 
 - [x] Реализация локального Qwen TTS через transformers
 - [x] Локальный перевод через Transformers (NLLB)
+- [x] Интеграция Coqui XTTS v2 с поддержкой клонирования голоса
 - [ ] Добавить оптимизацию длительности аудио (подгонка под тайминги)
 - [ ] Добавить отображение прогресса (progress bar)
 - [ ] Поддержка пакетной обработки файлов
