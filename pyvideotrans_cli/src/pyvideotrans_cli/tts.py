@@ -278,8 +278,8 @@ class QwenTTSLocal:
             try:
                 audio = AudioSegment.from_wav(sub["filename"])
                 
-                # Обрезаем тишину в начале и конце аудио (очистка артефактов)
-                audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                # НЕ обрезаем тишину! Мы уже обрезали её при синтезе.
+                # audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
                 
                 # Рассчитываем позицию наложения
                 start_position_ms = int(sub["start_time"] * 1000)
@@ -458,21 +458,54 @@ class CoquiXTTS:
         lang = self.language_map.get(self.target_language, self.language)
         
         # Использование примера голоса или встроенного спикера
+        temp_file = output_file.with_suffix('.tmp.wav')
+        
         if speaker_wav and Path(speaker_wav).exists():
             # Клонирование голоса
             self.model.tts_to_file(
                 text=text,
                 speaker_wav=speaker_wav,
                 language=lang,
-                file_path=str(output_file)
+                file_path=str(temp_file),
+                speed=1.0  # Важно: не ускорять, чтобы не проглатывать окончания
             )
         else:
             # Использование встроенного спикера
             self.model.tts_to_file(
                 text=text,
                 language=lang,
-                file_path=str(output_file)
+                file_path=str(temp_file),
+                speed=1.0
             )
+        
+        # Загружаем аудио для минимальной обработки
+        from pydub import AudioSegment
+        audio = AudioSegment.from_wav(str(temp_file))
+        
+        # Обрезаем ТОЛЬКО очень длинную тишину в начале (>500мс)
+        # Концы НЕ трогаем вообще, чтобы сохранить все фразы целиком
+        silence_threshold = -50  # dBFS
+        start_trim = 0
+        
+        # Ищем начало звука
+        for i in range(0, min(3000, len(audio)), 10):
+            chunk = audio[i:i+10]
+            if chunk.dBFS > silence_threshold:
+                start_trim = i
+                break
+        
+        # Обрезаем только если тишина в начале действительно длинная
+        if start_trim > 500:
+            audio = audio[start_trim:]
+        
+        # Сохраняем результат
+        audio.export(str(output_file), format="wav")
+        
+        # Удаляем временный файл
+        try:
+            temp_file.unlink()
+        except:
+            pass
         
         return str(output_file)
     
@@ -538,10 +571,10 @@ class CoquiXTTS:
                 continue
             
             try:
-                audio = AudioSegment.from_wav(sub["filename"])
-                
-                # Обрезаем тишину в начале и конце аудио (очистка артефактов)
-                audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                # НЕ обрезаем тишину! Мы уже обрезали её при синтезе.
+                # audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
+                # НЕ обрезаем тишину! Мы уже обрезали её при синтезе.
+                # audio = self._trim_silence(audio, silence_threshold=-50, min_silence_duration=100)
                 
                 # Рассчитываем позицию наложения
                 start_position_ms = int(sub["start_time"] * 1000)
