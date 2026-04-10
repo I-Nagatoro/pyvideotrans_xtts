@@ -49,7 +49,7 @@ def main():
                                  help="Использовать локальную модель Transformers (NLLB) вместо LLM API")
     translate_group.add_argument("--llm-api", default=None, 
                                  help="LLM API 地址 (如：https://api.openai.com/v1, https://api.deepseek.com/v1)")
-    translate_group.add_argument("--llm-key", required=not ("--transformers" in sys.argv), help="LLM API Key (не требуется при использовании --transformers)")
+    translate_group.add_argument("--llm-key", help="LLM API Key (не требуется при использовании --transformers)")
     translate_group.add_argument("--llm-model", default="gpt-3.5-turbo", help="LLM 模型名称")
     translate_group.add_argument("--llm-provider", choices=["openai", "deepseek", "qwen", "custom"], default="openai",
                                  help="LLM 提供商类型")
@@ -214,7 +214,8 @@ def run_tts(args):
             output_dir=str(args.output_dir / "tts"),
             device="cuda" if args.cuda else "cpu",
             speaker_wav=args.xtts_speaker,
-            language=args.xtts_language
+            language=args.xtts_language,
+            source_video=str(args.input) if not args.xtts_speaker else None  # Передаём исходное видео для извлечения голоса
         )
     elif args.qwen_local:
         # Qwen TTS Local

@@ -282,6 +282,7 @@ class CoquiXTTS:
     device: str = "cuda"  # "cuda" или "cpu"
     speaker_wav: Optional[str] = None  # Путь к примеру голоса для клонирования
     language: str = "en"  # Язык синтеза
+    source_video: Optional[str] = None  # Исходное видео для извлечения голоса
     
     def __post_init__(self):
         self.output_path = Path(self.output_dir)
@@ -308,6 +309,33 @@ class CoquiXTTS:
             "ja": "ja",
             "hi": "hi",
         }
+    
+    def _extract_speaker_from_video(self, video_path: str) -> str:
+        """Извлечение образца голоса из исходного видео (первые 10 секунд)"""
+        import subprocess
+        
+        speaker_file = self.output_path / "speaker_sample.wav"
+        
+        logger.info(f"Извлечение образца голоса из видео: {video_path}")
+        
+        # Извлекаем первые 10 секунд аудио для использования в качестве образца голоса
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-t", "10",  # Первые 10 секунд
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", "22050",  # XTTS предпочитает 22050 Гц
+            "-ac", "1",
+            str(speaker_file)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg error при извлечении голоса: {result.stderr}")
+        
+        logger.info(f"Образец голоса сохранён: {speaker_file}")
+        return str(speaker_file)
     
     def _load_model(self):
         """Загрузка модели XTTS v2"""
@@ -374,6 +402,12 @@ class CoquiXTTS:
         """
         logger.info("Запуск локального Coqui XTTS v2 синтеза")
         logger.warning(f"Целевой язык: {self.target_language}, XTTS язык: {self.language_map.get(self.target_language, self.language)}")
+        
+        # Если не указан образец голоса, но есть исходное видео - извлекаем голос из него
+        if not self.speaker_wav and self.source_video:
+            self.speaker_wav = self._extract_speaker_from_video(self.source_video)
+        elif not self.speaker_wav:
+            logger.warning("Образец голоса не указан, используется встроенный спикер XTTS")
         
         for i, sub in enumerate(self.subtitles):
             if not sub.get("text", "").strip():
